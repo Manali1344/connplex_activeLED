@@ -4,19 +4,19 @@ import requests
 from datetime import datetime
 import yfinance as yf
 
-# ---------------- APP ----------------
-app = FastAPI(title="Connplex Stock API")
+app = FastAPI()
 
-# ---------------- CORS (MANDATORY for GitHub Pages) ----------------
+# ✅ CORS — THIS IS THE KEY FIX
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # you can restrict later
+    allow_origins=[
+        "https://manali1344.github.io",  # your GitHub Pages origin
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ---------------- CONFIG ----------------
 SYMBOL = "CONNPLEX"
 
 session = requests.Session()
@@ -25,12 +25,10 @@ HEADERS = {
     "Accept": "application/json"
 }
 
-# ---------------- ROOT CHECK ----------------
 @app.get("/")
 def root():
-    return {"status": "Connplex Stock API is running"}
+    return {"status": "API running"}
 
-# ---------------- FETCH STOCK (NSE) ----------------
 def fetch_stock(symbol):
     try:
         session.get("https://www.nseindia.com", headers=HEADERS, timeout=5)
@@ -39,7 +37,6 @@ def fetch_stock(symbol):
         data = response.json()
 
         price_data = data["priceInfo"]
-
         return {
             "symbol": f"{symbol} CINEMAS LTD",
             "price": price_data["lastPrice"],
@@ -51,23 +48,18 @@ def fetch_stock(symbol):
             "change_percent": round(price_data["pChange"], 2),
             "vwap": data.get("securityWiseDP", {}).get("vwap", price_data["lastPrice"]),
         }
-
     except Exception as e:
-        return {
-            "error": "NSE fetch failed",
-            "details": str(e)
-        }
+        return {"error": str(e)}
 
-# ---------------- FETCH INDEX DATA ----------------
 def fetch_index_data():
     try:
-        nifty = yf.Ticker("^NSEI").info.get("regularMarketPrice")
-        sensex = yf.Ticker("^BSESN").info.get("regularMarketPrice")
-        return {"nifty": nifty, "sensex": sensex}
+        return {
+            "nifty": yf.Ticker("^NSEI").info.get("regularMarketPrice"),
+            "sensex": yf.Ticker("^BSESN").info.get("regularMarketPrice"),
+        }
     except:
         return {"nifty": None, "sensex": None}
 
-# ---------------- API ENDPOINT ----------------
 @app.get("/data")
 def get_stock_data():
     return {
