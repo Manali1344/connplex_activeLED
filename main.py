@@ -1,10 +1,22 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import requests
 from datetime import datetime
 import yfinance as yf
 
-app = FastAPI()
+# ---------------- APP ----------------
+app = FastAPI(title="Connplex Stock API")
 
+# ---------------- CORS (MANDATORY for GitHub Pages) ----------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],   # you can restrict later
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ---------------- CONFIG ----------------
 SYMBOL = "CONNPLEX"
 
 session = requests.Session()
@@ -13,6 +25,12 @@ HEADERS = {
     "Accept": "application/json"
 }
 
+# ---------------- ROOT CHECK ----------------
+@app.get("/")
+def root():
+    return {"status": "Connplex Stock API is running"}
+
+# ---------------- FETCH STOCK (NSE) ----------------
 def fetch_stock(symbol):
     try:
         session.get("https://www.nseindia.com", headers=HEADERS, timeout=5)
@@ -21,6 +39,7 @@ def fetch_stock(symbol):
         data = response.json()
 
         price_data = data["priceInfo"]
+
         return {
             "symbol": f"{symbol} CINEMAS LTD",
             "price": price_data["lastPrice"],
@@ -32,9 +51,14 @@ def fetch_stock(symbol):
             "change_percent": round(price_data["pChange"], 2),
             "vwap": data.get("securityWiseDP", {}).get("vwap", price_data["lastPrice"]),
         }
-    except Exception:
-        return None
 
+    except Exception as e:
+        return {
+            "error": "NSE fetch failed",
+            "details": str(e)
+        }
+
+# ---------------- FETCH INDEX DATA ----------------
 def fetch_index_data():
     try:
         nifty = yf.Ticker("^NSEI").info.get("regularMarketPrice")
@@ -43,13 +67,10 @@ def fetch_index_data():
     except:
         return {"nifty": None, "sensex": None}
 
+# ---------------- API ENDPOINT ----------------
 @app.get("/data")
 def get_stock_data():
-    stock = fetch_stock(SYMBOL)
-    index_data = fetch_index_data()
-
     return {
-        "stock": stock,
-        "index": index_data,
-        "timestamp": datetime.now().strftime("%d-%b-%Y %H:%M:%S IST")
-    }
+        "stock": fetch_stock(SYMBOL),
+        "index": fetch_index_data(),
+        "timestamp": datetime.now().strftime("
