@@ -73,4 +73,5 @@ def get_stock_data():
     return {
         "stock": fetch_stock(SYMBOL),
         "index": fetch_index_data(),
-        "timestamp": datetime.now().strftime("
+        "timestamp": datetime.now().strftime("%d-%b-%Y %H:%M:%S IST")
+    }
