@@ -38,7 +38,7 @@ def fetch_stock(symbol):
 
         price_data = data["priceInfo"]
         return {
-            "symbol": f"{symbol} CINEMAS LTD - SM.NS",
+            "symbol": f"{symbol} CINEMAS LTD-SM.NS",
             "price": price_data["lastPrice"],
             "open": price_data["open"],
             "high": price_data["intraDayHighLow"]["max"],
