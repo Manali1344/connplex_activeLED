@@ -6,13 +6,16 @@ import yfinance as yf
 
 app = FastAPI()
 
-# ✅ CHANGE THIS if needed
+# 🔹 Trading Symbol
 SYMBOL = "CONNPLEX"
+
+# 🔹 Display Name (What shows on LED)
+DISPLAY_NAME = "CONNPLEX CINEMAS LTD - SM.NS"
 
 # ✅ CORS (Allow all for now)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # For testing. Later restrict to your domain.
+    allow_origins=["*"],   # Later restrict to your domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -30,7 +33,7 @@ def root():
     return {"status": "API running"}
 
 
-# 🔹 Primary Method (NSE)
+# 🔹 Try NSE First
 def fetch_stock_nse(symbol):
     try:
         session.get("https://www.nseindia.com", headers=HEADERS, timeout=5)
@@ -47,8 +50,10 @@ def fetch_stock_nse(symbol):
 
         price_data = data["priceInfo"]
 
+        vwap = data.get("securityWiseDP", {}).get("vwap")
+
         return {
-            "symbol": f"{symbol}",
+            "symbol": DISPLAY_NAME,
             "price": price_data.get("lastPrice"),
             "open": price_data.get("open"),
             "high": price_data.get("intraDayHighLow", {}).get("max"),
@@ -56,21 +61,28 @@ def fetch_stock_nse(symbol):
             "prev_close": price_data.get("previousClose"),
             "change": price_data.get("change"),
             "change_percent": round(price_data.get("pChange", 0), 2),
-            "vwap": data.get("securityWiseDP", {}).get("vwap"),
+            "vwap": vwap,
         }
 
     except Exception:
         return None
 
 
-# 🔹 Fallback Method (Yahoo Finance - more stable on cloud)
+# 🔹 Yahoo Fallback (More Stable)
 def fetch_stock_yfinance(symbol):
     try:
         ticker = yf.Ticker(symbol + ".NS")
+
         info = ticker.info
+        hist = ticker.history(period="1d", interval="1m")
+
+        # Calculate VWAP manually
+        vwap = None
+        if not hist.empty:
+            vwap = (hist["Close"] * hist["Volume"]).sum() / hist["Volume"].sum()
 
         return {
-            "symbol": symbol,
+            "symbol": DISPLAY_NAME,
             "price": info.get("regularMarketPrice"),
             "open": info.get("regularMarketOpen"),
             "high": info.get("regularMarketDayHigh"),
@@ -78,7 +90,7 @@ def fetch_stock_yfinance(symbol):
             "prev_close": info.get("regularMarketPreviousClose"),
             "change": info.get("regularMarketChange"),
             "change_percent": info.get("regularMarketChangePercent"),
-            "vwap": None,
+            "vwap": round(vwap, 2) if vwap else None,
         }
 
     except Exception:
@@ -88,19 +100,17 @@ def fetch_stock_yfinance(symbol):
 def fetch_stock(symbol):
     # Try NSE first
     data = fetch_stock_nse(symbol)
-
     if data:
         return data
 
     # Fallback to Yahoo
     data = fetch_stock_yfinance(symbol)
-
     if data:
         return data
 
-    # Final safe fallback
+    # Final Safe Return (Never crash)
     return {
-        "symbol": symbol,
+        "symbol": DISPLAY_NAME,
         "price": 0,
         "open": 0,
         "high": 0,
