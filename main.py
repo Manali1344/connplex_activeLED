@@ -50,14 +50,23 @@ def fetch_stock_nse(symbol):
 
         price_data = data["priceInfo"]
 
+        high = price_data.get("intraDayHighLow", {}).get("max")
+        low = price_data.get("intraDayHighLow", {}).get("min")
+        price = price_data.get("lastPrice")
+
+        # Try real VWAP first
         vwap = data.get("securityWiseDP", {}).get("vwap")
+
+        # If NSE does not give VWAP, calculate manually
+        if not vwap and high and low and price:
+            vwap = round((high + low + price) / 3, 2)
 
         return {
             "symbol": DISPLAY_NAME,
-            "price": price_data.get("lastPrice"),
+            "price": price,
             "open": price_data.get("open"),
-            "high": price_data.get("intraDayHighLow", {}).get("max"),
-            "low": price_data.get("intraDayHighLow", {}).get("min"),
+            "high": high,
+            "low": low,
             "prev_close": price_data.get("previousClose"),
             "change": price_data.get("change"),
             "change_percent": round(price_data.get("pChange", 0), 2),
