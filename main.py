@@ -9,17 +9,11 @@ app = FastAPI()
 # ✅ CORS — THIS IS THE KEY FIX
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://connplexlive.in",
-        "https://www.connplexlive.in",
-        "https://manali1344.github.io",
-        "https://connplexlive.github.io/",
-    ],
+    allow_origins=["*"],   # ✅ Allow all domains (temporary testing)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-SYMBOL = "CONNPLEX"
 
 session = requests.Session()
 HEADERS = {
