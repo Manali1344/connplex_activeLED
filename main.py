@@ -74,28 +74,30 @@ def fetch_stock_yfinance(symbol):
         ticker = yf.Ticker(symbol + ".NS")
 
         info = ticker.info
-        hist = ticker.history(period="1d", interval="1m")
 
-        # Calculate VWAP manually
+        high = info.get("regularMarketDayHigh")
+        low = info.get("regularMarketDayLow")
+        price = info.get("regularMarketPrice")
+
+        # Simple VWAP approximation
         vwap = None
-        if not hist.empty:
-            vwap = (hist["Close"] * hist["Volume"]).sum() / hist["Volume"].sum()
+        if high and low and price:
+            vwap = round((high + low + price) / 3, 2)
 
         return {
             "symbol": DISPLAY_NAME,
-            "price": info.get("regularMarketPrice"),
+            "price": price,
             "open": info.get("regularMarketOpen"),
-            "high": info.get("regularMarketDayHigh"),
-            "low": info.get("regularMarketDayLow"),
+            "high": high,
+            "low": low,
             "prev_close": info.get("regularMarketPreviousClose"),
             "change": info.get("regularMarketChange"),
             "change_percent": info.get("regularMarketChangePercent"),
-            "vwap": round(vwap, 2) if vwap else None,
+            "vwap": vwap,
         }
 
     except Exception:
         return None
-
 
 def fetch_stock(symbol):
     # Try NSE first
