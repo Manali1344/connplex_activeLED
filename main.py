@@ -1,83 +1,153 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import requests
 from datetime import datetime
 import yfinance as yf
-import time
 
 app = FastAPI()
 
-SYMBOL = "CONNPLEX.NS"
-DISPLAY_NAME = "CONNPLEX CINEMAS LTD"
+# 🔹 Trading Symbol
+SYMBOL = "CONNPLEX"
 
+# 🔹 Display Name (What shows on LED)
+DISPLAY_NAME = "CONNPLEX CINEMAS LTD - SM.NS"
+
+# ✅ CORS (Allow all for now)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],   # Later restrict to your domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 🔹 CACHE
-cache_data = None
-cache_time = 0
-CACHE_TTL = 15
+session = requests.Session()
+HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "application/json"
+}
 
 
 @app.get("/")
 def root():
-    return {"status": "API running 🚀"}
+    return {"status": "API running"}
 
 
-# 🔹 YAHOO (LIGHT VERSION)
-def fetch_stock():
+# 🔹 Try NSE First
+def fetch_stock_nse(symbol):
     try:
-        ticker = yf.Ticker(SYMBOL)
-        data = ticker.history(period="1d")
+        session.get("https://www.nseindia.com", headers=HEADERS, timeout=5)
+        url = f"https://www.nseindia.com/api/quote-equity?symbol={symbol}"
+        response = session.get(url, headers=HEADERS, timeout=5)
 
-        if data.empty:
+        if response.status_code != 200:
             return None
 
-        latest = data.iloc[-1]
+        data = response.json()
 
-        price = round(latest["Close"], 2)
-        high = round(latest["High"], 2)
-        low = round(latest["Low"], 2)
-        open_price = round(latest["Open"], 2)
+        if "priceInfo" not in data:
+            return None
 
-        vwap = round((high + low + price) / 3, 2)
+        price_data = data["priceInfo"]
+
+        high = price_data.get("intraDayHighLow", {}).get("max")
+        low = price_data.get("intraDayHighLow", {}).get("min")
+        price = price_data.get("lastPrice")
+
+        # Try real VWAP first
+        vwap = data.get("securityWiseDP", {}).get("vwap")
+
+        # If NSE does not give VWAP, calculate manually
+        if not vwap and high and low and price:
+            vwap = round((high + low + price) / 3, 2)
 
         return {
             "symbol": DISPLAY_NAME,
             "price": price,
-            "open": open_price,
+            "open": price_data.get("open"),
             "high": high,
             "low": low,
+            "prev_close": price_data.get("previousClose"),
+            "change": price_data.get("change"),
+            "change_percent": round(price_data.get("pChange", 0), 2),
             "vwap": vwap,
-            "source": "Yahoo"
         }
 
-    except Exception as e:
-        print("ERROR:", e)
+    except Exception:
         return None
 
 
-@app.get("/data")
-def get_data():
-    global cache_data, cache_time
+# 🔹 Yahoo Fallback (More Stable)
+def fetch_stock_yfinance(symbol):
+    try:
+        ticker = yf.Ticker(symbol + ".NS")
 
-    now = time.time()
+        info = ticker.info
 
-    if cache_data and (now - cache_time < CACHE_TTL):
-        return cache_data
+        high = info.get("regularMarketDayHigh")
+        low = info.get("regularMarketDayLow")
+        price = info.get("regularMarketPrice")
 
-    stock = fetch_stock()
+        # Simple VWAP approximation
+        vwap = None
+        if high and low and price:
+            vwap = round((high + low + price) / 3, 2)
 
-    response = {
-        "stock": stock if stock else {"error": "Data unavailable"},
-        "server_time": datetime.now().strftime("%d-%b-%Y %H:%M:%S IST")
+        return {
+            "symbol": DISPLAY_NAME,
+            "price": price,
+            "open": info.get("regularMarketOpen"),
+            "high": high,
+            "low": low,
+            "prev_close": info.get("regularMarketPreviousClose"),
+            "change": info.get("regularMarketChange"),
+            "change_percent": info.get("regularMarketChangePercent"),
+            "vwap": vwap,
+        }
+
+    except Exception:
+        return None
+
+def fetch_stock(symbol):
+    # Try NSE first
+    data = fetch_stock_nse(symbol)
+    if data:
+        return data
+
+    # Fallback to Yahoo
+    data = fetch_stock_yfinance(symbol)
+    if data:
+        return data
+
+    # Final Safe Return (Never crash)
+    return {
+        "symbol": DISPLAY_NAME,
+        "price": 0,
+        "open": 0,
+        "high": 0,
+        "low": 0,
+        "prev_close": 0,
+        "change": 0,
+        "change_percent": 0,
+        "vwap": 0,
+        "error": "Data temporarily unavailable"
     }
 
-    cache_data = response
-    cache_time = now
 
-    return response
+def fetch_index_data():
+    try:
+        return {
+            "nifty": yf.Ticker("^NSEI").info.get("regularMarketPrice"),
+            "sensex": yf.Ticker("^BSESN").info.get("regularMarketPrice"),
+        }
+    except Exception:
+        return {"nifty": None, "sensex": None}
+
+
+@app.get("/data")
+def get_stock_data():
+    return {
+        "stock": fetch_stock(SYMBOL),
+        "index": fetch_index_data(),
+        "timestamp": datetime.now().strftime("%d-%b-%Y %H:%M:%S IST")
+    }
