@@ -6,9 +6,11 @@ import time
 
 app = FastAPI()
 
-SYMBOL = "TCS"
-DISPLAY_NAME = "TCS LTD - NSE"
+# 🔹 CONFIG
+SYMBOL = "CONNPLEX"
+DISPLAY_NAME = "CONNPLEX CINEMAS LTD - NSE SME"
 
+# 🔹 CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,20 +19,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 🔹 SESSION
 session = requests.Session()
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
     "Accept": "application/json",
     "Referer": "https://www.nseindia.com/",
+    "Accept-Language": "en-US,en;q=0.9",
 }
 
-# 🔹 CACHE
+# 🔹 CACHE (VERY IMPORTANT for memory)
 cache_data = None
 cache_time = 0
 CACHE_TTL = 10  # seconds
 
 
+# 🔹 INIT NSE SESSION
 def init_nse():
     try:
         session.get("https://www.nseindia.com", headers=HEADERS, timeout=5)
@@ -38,6 +43,7 @@ def init_nse():
         pass
 
 
+# 🔹 FETCH STOCK (SME SAFE)
 def fetch_stock():
     try:
         init_nse()
@@ -45,19 +51,26 @@ def fetch_stock():
         url = f"https://www.nseindia.com/api/quote-equity?symbol={SYMBOL}"
         res = session.get(url, headers=HEADERS, timeout=5)
 
+        print("STATUS:", res.status_code)
+
         if res.status_code != 200:
+            print("❌ NSE FAILED")
             return None
 
         data = res.json()
-        price_data = data.get("priceInfo", {})
+
+        if "priceInfo" not in data:
+            print("❌ priceInfo missing")
+            return None
+
+        price_data = data["priceInfo"]
 
         high = price_data.get("intraDayHighLow", {}).get("max")
         low = price_data.get("intraDayHighLow", {}).get("min")
         price = price_data.get("lastPrice")
 
-        vwap = None
-        if high and low and price:
-            vwap = round((high + low + price) / 3, 2)
+        # ✅ CORRECT VWAP (works for SME)
+        vwap = price_data.get("vwap")
 
         return {
             "symbol": DISPLAY_NAME,
@@ -67,22 +80,30 @@ def fetch_stock():
             "low": low,
             "prev_close": price_data.get("previousClose"),
             "change": price_data.get("change"),
-            "change_percent": price_data.get("pChange"),
+            "change_percent": round(price_data.get("pChange", 0), 2),
             "vwap": vwap,
+            "timestamp": data.get("metadata", {}).get("lastUpdateTime"),
+            "source": "NSE"
         }
 
     except Exception as e:
-        print("Error:", e)
+        print("❌ ERROR:", e)
         return None
 
 
+@app.get("/")
+def root():
+    return {"status": "API running 🚀"}
+
+
+# 🔹 MAIN ENDPOINT WITH CACHE
 @app.get("/data")
 def get_data():
     global cache_data, cache_time
 
     now = time.time()
 
-    # ✅ Return cached data
+    # ✅ Return cached response (reduces memory + API load)
     if cache_data and (now - cache_time < CACHE_TTL):
         return cache_data
 
@@ -90,7 +111,7 @@ def get_data():
 
     response = {
         "stock": stock if stock else {"error": "Data unavailable"},
-        "timestamp": datetime.now().strftime("%d-%b-%Y %H:%M:%S IST")
+        "server_time": datetime.now().strftime("%d-%b-%Y %H:%M:%S IST")
     }
 
     cache_data = response
